@@ -1,0 +1,6 @@
+[submodule "deps/mushroom-rl"]
+	path = deps/mushroom-rl
+	url = git@github.com:jacarvalho/mushroom-rl.git
+[submodule "deps/experiment_launcher"]
+	path = deps/experiment_launcher
+	url = git@git.ias.informatik.tu-darmstadt.de:common/experiment_launcher.git
