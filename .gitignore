@@ -145,4 +145,6 @@ dmypy.json
 .vscode/
 wandb/
 
+scripts/plots/out
+
 
