@@ -1,6 +1,5 @@
 import os
 import argparse
-from abc import ABC
 import json
 
 import numpy as np
@@ -12,68 +11,17 @@ import torch.nn.functional as F
 
 from mushroom_rl.core import Core
 from mushroom_rl.environments.gym_env import Gym
-# from mushroom_rl.utils.callbacks import PlotDataset
-from src.utils.msh_utils import compute_J_start_t
-from mushroom_rl.rl_utils.preprocessors import StandardizationPreprocessor
+from mushroom_rl.utils.callbacks import PlotDataset
+from mushroom_rl.utils.dataset import compute_J
+from mushroom_rl.utils.preprocessors import StandardizationPreprocessor
 
 from src.algs.step_based.sac_pg import SAC_PolicyGradient
 from src.utils.seeds import fix_random_seed
 
+from exp_sac import CriticNetwork, ActorNetwork
+
 
 ########################################################################################################################
-class CriticNetwork(nn.Module, ABC):
-    def __init__(self, input_shape, output_shape, n_features, **kwargs):
-        super().__init__()
-
-        n_input = input_shape[-1]
-        n_output = output_shape[0]
-
-        self._h1 = nn.Linear(n_input, n_features)
-        self._h2 = nn.Linear(n_features, n_features)
-        self._h3 = nn.Linear(n_features, n_output)
-
-        nn.init.xavier_uniform_(self._h1.weight,
-                                gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self._h2.weight,
-                                gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self._h3.weight,
-                                gain=nn.init.calculate_gain('linear'))
-
-    def forward(self, state, action):
-        state_action = torch.cat((state.float(), action.float()), dim=1)
-        features1 = F.relu(self._h1(state_action))
-        features2 = F.relu(self._h2(features1))
-        q = self._h3(features2)
-
-        return torch.squeeze(q)
-
-
-class ActorNetwork(nn.Module, ABC):
-    def __init__(self, input_shape, output_shape, n_features, **kwargs):
-        super(ActorNetwork, self).__init__()
-
-        n_input = input_shape[-1]
-        n_output = output_shape[0]
-
-        self._h1 = nn.Linear(n_input, n_features)
-        self._h2 = nn.Linear(n_features, n_features)
-        self._h3 = nn.Linear(n_features, n_output)
-
-        nn.init.xavier_uniform_(self._h1.weight,
-                                gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self._h2.weight,
-                                gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self._h3.weight,
-                                gain=nn.init.calculate_gain('linear'))
-
-    def forward(self, state):
-        features1 = F.relu(self._h1(torch.squeeze(state, 1).float()))
-        features2 = F.relu(self._h2(features1))
-        a = self._h3(features2)
-
-        return a
-
-
 def experiment(env_id, horizon, gamma,
                n_epochs, n_steps, n_episodes_test,
                initial_replay_size,
@@ -96,7 +44,7 @@ def experiment(env_id, horizon, gamma,
     if use_cuda:
         torch.set_num_threads(1)
 
-    print('Env id: {}, Alg: SAC'.format(env_id))
+    print('Env id: {}, Alg: SAC-SF'.format(env_id))
 
     # Create results directory
     results_dir = os.path.join(results_dir, str(seed))
@@ -135,7 +83,7 @@ def experiment(env_id, horizon, gamma,
                          use_cuda=use_cuda)
 
     # Agent
-    mc_gradient_estimator = {'estimator': 'reptrick',
+    mc_gradient_estimator = {'estimator': 'sf',
                              'n_samples': mc_samples_gradient}
     agent = SAC_PolicyGradient(mdp.info, actor_mu_params, actor_sigma_params,
                                actor_optimizer, critic_params,
@@ -167,8 +115,8 @@ def experiment(env_id, horizon, gamma,
 
     # First evaluation
     dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
-    Jgamma = compute_J_start_t(dataset, gamma)
-    Jenv = compute_J_start_t(dataset)
+    Jgamma = compute_J(dataset, gamma)
+    Jenv = compute_J(dataset)
     print('J: {:.4f} - Jenv: {:.4f}'.format(np.mean(Jgamma), np.mean(Jenv)))
     Jgamma_l.append((0, np.mean(Jgamma)))
     Jenv_l.append((0, np.mean(Jenv)))
@@ -180,11 +128,12 @@ def experiment(env_id, horizon, gamma,
 
         dataset = core.evaluate(n_episodes=n_episodes_test, render=True if n % 10 == 0 and debug else False,
                                 quiet=not verbose)
-        Jgamma = compute_J_start_t(dataset, gamma)
-        Jenv = compute_J_start_t(dataset)
+        Jgamma = compute_J(dataset, gamma)
+        Jenv = compute_J(dataset)
         print('J: {:.4f} - Jenv: {:.4f}'.format(np.mean(Jgamma), np.mean(Jenv)))
         Jgamma_l.append((n_steps*(n+1), np.mean(Jgamma)))
         Jenv_l.append((n_steps*(n+1), np.mean(Jenv)))
+
 
         if n % max(1, int(n_epochs * 0.05)) == 0 or n == n_epochs - 1:
             np.save(os.path.join(results_dir, 'J.npy'), np.array(Jgamma_l))
@@ -193,11 +142,11 @@ def experiment(env_id, horizon, gamma,
 
 def default_params():
     defaults = dict(
-        env_id='HopperBulletEnv-v0',
+        env_id='Hopper-v2',
         horizon=1000, gamma=0.99,
-        n_epochs=200, n_steps=5000, n_episodes_test=10,
-        initial_replay_size=5000,
-        max_replay_size=500000,
+        n_epochs=1000, n_steps=3000, n_episodes_test=10,
+        initial_replay_size=10000,
+        max_replay_size=1000000,
         batch_size=256,
         warmup_transitions=5000,
         tau=0.005,
@@ -211,8 +160,7 @@ def default_params():
         use_cuda=False,
         debug=False,
         verbose=False,
-        seed=1,
-        results_dir='/tmp/results'
+        seed=1, results_dir='/tmp/results'
     )
 
     return defaults

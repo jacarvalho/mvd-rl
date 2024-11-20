@@ -22,7 +22,8 @@ conda install anaconda::swig -y
 
 conda activate mvd-rl
 cd deps && cd experiment_launcher && pip install --no-use-pep517 -e .[all] && cd ..
-cd mushroom-rl && pip install --no-use-pep517 -e .[all] && cd .. && cd ..
+#cd mushroom-rl && pip install --no-use-pep517 -e .[all] && cd .. && cd ..
+cd mushroom-rl && pip install --no-use-pep517 -e .[gym,bullet,plots] && cd .. && cd ..
 
 pip install -e .
 
@@ -33,3 +34,14 @@ conda install pinocchio -c conda-forge -y  # pinocchio is not available on windo
 
 pip install einops
 
+pip install imageio
+
+pip install "cython<=0.29.33"
+
+pip install mujoco-py
+pip install mujoco
+
+conda install -c conda-forge glew -y
+conda install -c conda-forge mesalib -y
+conda install -c menpo glfw3 -y
+conda install conda-forge::patchelf -y

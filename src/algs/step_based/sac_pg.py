@@ -11,9 +11,9 @@ from mushroom_rl.algorithms.actor_critic.deep_actor_critic import DeepAC
 from mushroom_rl.policy import Policy
 from mushroom_rl.approximators import Regressor
 from mushroom_rl.approximators.parametric import TorchApproximator
-from mushroom_rl.utils.parameters import to_parameter
-from mushroom_rl.utils.replay_memory import ReplayMemory
-from mushroom_rl.utils.torch import to_float_tensor
+from mushroom_rl.rl_utils.parameters import to_parameter
+from mushroom_rl.rl_utils.replay_memory import ReplayMemory
+from mushroom_rl.utils import TorchUtils
 
 from src.distributions.torchdist_utils import DoubleSidedStandardMaxwell, standard_gaussian_from_standard_dsmaxwell
 
@@ -32,7 +32,7 @@ class SACPolicy(Policy):
     the internals calculations of the SAC algorithm.
 
     """
-    def __init__(self, mu_approximator, sigma_approximator, min_a, max_a):
+    def __init__(self, mu_approximator, sigma_approximator, min_a, max_a, policy_state_shape=None):
         """
         Constructor.
 
@@ -47,16 +47,18 @@ class SACPolicy(Policy):
                 for each component.
 
         """
+        super().__init__(policy_state_shape)
+
         self._s_dim = mu_approximator.input_shape[0]
         self._a_dim = mu_approximator.output_shape[0]
 
         self._mu_approximator = mu_approximator
         self._sigma_approximator = sigma_approximator
 
-        self._delta_a = to_float_tensor(.5 * (max_a - min_a), self.use_cuda)
-        self._central_a = to_float_tensor(.5 * (max_a + min_a), self.use_cuda)
+        self._delta_a = TorchUtils.to_float_tensor(.5 * (max_a - min_a))
+        self._central_a = TorchUtils.to_float_tensor(.5 * (max_a + min_a))
 
-        use_cuda = self._mu_approximator.model.use_cuda
+        use_cuda = TorchUtils.get_device() != 'cpu'
 
         if use_cuda:
             self._delta_a = self._delta_a.cuda()
@@ -74,9 +76,9 @@ class SACPolicy(Policy):
     def __call__(self, state, action):
         raise NotImplementedError
 
-    def draw_action(self, state):
+    def draw_action(self, state, policy_state=None):
         return self.compute_action_a_and_log_prob_a_t(
-            state, compute_log_prob=False).detach().cpu().numpy()
+            state, compute_log_prob=False), policy_state
 
     def compute_action_a_and_log_prob_a(self, state):
         """
@@ -200,11 +202,12 @@ class SACPolicy(Policy):
         """
         True if the policy is using cuda_tensors.
         """
-        return self._mu_approximator.model.use_cuda
+        return TorchUtils.get_device() != 'cpu'
+        # return self._mu_approximator.model.use_cuda
 
     def get_mean_and_std(self, state, tensor=True):
-        mu = self._mu_approximator.predict(state, output_tensor=tensor)
-        log_sigma = self._sigma_approximator.predict(state, output_tensor=tensor)
+        mu = self._mu_approximator.predict(state)
+        log_sigma = self._sigma_approximator.predict(state)
         # Bound the log_std
         log_sigma = torch.clamp(log_sigma, LOG_STD_MIN, LOG_STD_MAX)
         sigma = log_sigma.exp()
@@ -416,8 +419,6 @@ class SAC_PolicyGradient(DeepAC):
         else:
             self._target_entropy = target_entropy
 
-        self._replay_memory = ReplayMemory(initial_replay_size, max_replay_size)
-
         if 'n_models' in critic_params.keys():
             assert critic_params['n_models'] == 2
         else:
@@ -468,6 +469,8 @@ class SAC_PolicyGradient(DeepAC):
         )
 
         super().__init__(mdp_info, policy, actor_optimizer, policy_parameters)
+
+        self._replay_memory = ReplayMemory(mdp_info, self.info, initial_replay_size, max_replay_size)
 
     def fit(self, dataset):
         self._replay_memory.add(dataset)
@@ -535,10 +538,8 @@ class SAC_PolicyGradient(DeepAC):
                                 self._target_critic_approximator)
 
     def _loss_objective(self, state, action_a, log_prob_a):
-        q_0 = self._critic_approximator(state, action_a,
-                                        output_tensor=True, idx=0)
-        q_1 = self._critic_approximator(state, action_a,
-                                        output_tensor=True, idx=1)
+        q_0 = self._critic_approximator(state, action_a, idx=0)
+        q_1 = self._critic_approximator(state, action_a, idx=1)
 
         q = torch.min(q_0, q_1)
 
@@ -605,8 +606,8 @@ class SAC_PolicyGradient(DeepAC):
         a, log_prob_next = self.policy.compute_action_a_and_log_prob_a(next_state)
 
         q = self._target_critic_approximator.predict(
-            next_state, a, prediction='min') - self._alpha_np * log_prob_next
-        q *= 1 - absorbing
+            next_state, a, prediction='min').detach() - self._alpha.detach() * log_prob_next
+        q *= torch.logical_not(absorbing)
 
         return q
 

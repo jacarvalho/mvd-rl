@@ -6,6 +6,14 @@ Accompanying code for the paper *An Empirical Analysis of Measure-Valued Derivat
 
 ### Installation
 
+Install MuJoCo as in 
+[https://github.com/openai/mujoco-py?tab=readme-ov-file#install-mujoco](https://github.com/openai/mujoco-py?tab=readme-ov-file#install-mujoco)
+
+Add to .bashrc
+```bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
+```
+
 Install everything with
 ```bash
 bash setup.sh
