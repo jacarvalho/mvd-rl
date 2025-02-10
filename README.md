@@ -1,6 +1,6 @@
 # Measure-Valued Derivatives in Reinforcement Learning
 
-Accompanying code for the paper *An Empirical Analysis of Measure-Valued Derivatives for Policy Gradients*, submitted to IJCNN 2021. 
+Accompanying code for the paper [An Empirical Analysis of Measure-Valued Derivatives for Policy Gradients](https://www.ias.informatik.tu-darmstadt.de/uploads/Team/JoaoCarvalho/2021_ijcnn-mvd_rl.pdf), submitted to IJCNN 2021. 
 
 ---
 
